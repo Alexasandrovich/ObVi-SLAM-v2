@@ -10,6 +10,7 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
+      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libffi.so.7 /usr/lib/x86_64-linux-gnu/libtiff.so.5
     volumes:
       - ../config:/app/config
       - ../data:/app/data

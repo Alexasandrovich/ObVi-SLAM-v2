@@ -32,7 +32,7 @@ RUN git clone https://github.com/borglab/gtsam.git && \
     cd / && rm -rf /tmp/gtsam
 
 # 3. Python зависимости
-RUN pip install --no-cache-dir ultralytics opencv-python-headless pybind11 pyyaml
+RUN pip install --no-cache-dir "numpy<2.0" ultralytics opencv-python-headless pybind11 pyyaml
 
 # 4. Сборка проекта
 WORKDIR /app

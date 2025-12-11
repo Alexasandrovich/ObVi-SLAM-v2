@@ -1,14 +1,31 @@
 camera:
-  width: 640
-  height: 480
-  fx: 500.0
-  fy: 500.0
-  cx: 320.0
-  cy: 240.0
+  # Разрешение изображения
+  width: 1920
+  height: 1080
 
-detector:
-  type: "yolo"
-  weights: "yolov8n.pt" # Автоматически скачается ultralytics
+  # Интринсики (Intrinsics)
+  fx: 1174.0
+  fy: 1174.0
+  cx: 960.0
+  cy: 540.0
 
-dataset:
-  path: "/app/data/video.mp4"
+  # Коэффициенты дисторсии (k1, k2, p1, p2, k3)
+  # У тебя нули, но оставим поле для будущего
+  dist_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+  # Экстринсики (Extrinsics) относительно земли (Base footprint)
+  # t: [0.0, 0.0, 1.52] -> высота камеры 1.52м
+  mounting_height: 1.52
+
+ai:
+  model_path: "yolov8n.pt" # Автоматически скачается
+  # Классы COCO для детекции:
+  # 0:person, 1:bicycle, 2:car, 3:motorcycle, 5:bus, 7:truck, 13:bench
+  target_classes: [0, 1, 2, 3, 5, 7, 13]
+  conf_threshold: 0.5
+
+system:
+  video_path: "/app/data/video.mp4"
+  # Параметры визуализации карты
+  map_scale: 20.0  # пикселей на метр
+  map_size: 800

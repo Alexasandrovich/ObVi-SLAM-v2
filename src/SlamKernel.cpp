@@ -51,9 +51,11 @@ public:
 
     // 1. Visual Odometry Step
     cv::Mat T_cv = vo_->add_frame(img);
+    Eigen::Matrix4d T_eigen;
+    for(int i=0; i<4; i++)
+      for(int j=0; j<4; j++)
+        T_eigen(i,j) = T_cv.at<double>(i,j);
 
-    Matrix4d T_eigen;
-    for(int i=0; i<4; i++) for(int j=0; j<4; j++) T_eigen(i,j) = T_cv.at<double>(i,j);
     Pose3 relative_pose(T_eigen);
 
     // 2. Add Pose to Graph
@@ -76,11 +78,17 @@ public:
 
       // Если новый объект - инициализируем
       if (!isam_.valueExists(L(id)) && !initial_estimates_.exists(L(id))) {
-        // ТРИАНГУЛЯЦИЯ (Упрощенная для монокуляра)
+        // calibrate переводит пиксели (u,v) в нормализованные координаты (x,y)
+        Point2 normalized_xy = K_->calibrate(measured_uv);
+
         // Мы не знаем глубину. Для старта предполагаем фиксированную глубину 5м.
         // GTSAM потом подвинет точку, когда увидит её с другого ракурса (параллакс).
-        Point3 ray = current_pose_.rotation().rotate(K_->backproject(measured_uv, 5.0));
-        Point3 global_point = current_pose_.translation() + ray;
+        // Создаем луч на глубину 5 метров: [x*Z, y*Z, Z]
+        double depth = 5.0;
+        Point3 camera_point(normalized_xy.x() * depth, normalized_xy.y() * depth, depth);
+
+        // Переводим в глобальные координаты
+        Point3 global_point = current_pose_.transformFrom(camera_point);
 
         initial_estimates_.insert(L(id), global_point);
 

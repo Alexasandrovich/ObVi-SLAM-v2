@@ -3,7 +3,6 @@ FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
 ENV DEBIAN_FRONTEND=noninteractive
 
 # 1. Установка системных зависимостей
-# Добавил wget и ca-certificates, иногда git ругается на сертификаты
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -13,10 +12,11 @@ RUN apt-get update && apt-get install -y \
     libboost-all-dev \
     libtbb-dev \
     libopencv-dev \
+    libeigen3-dev \
     python3-opencv \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Сборка GTSAM (Fix: добавил mkdir build)
+# 2. Сборка GTSAM
 WORKDIR /tmp
 RUN git clone https://github.com/borglab/gtsam.git && \
     cd gtsam && \
@@ -34,11 +34,11 @@ RUN git clone https://github.com/borglab/gtsam.git && \
 # 3. Python зависимости
 RUN pip install --no-cache-dir ultralytics opencv-python-headless pybind11 pyyaml
 
-# 4. Сборка нашего проекта
+# 4. Сборка проекта
 WORKDIR /app
 COPY . .
 
-# Чистим старый build если был скопирован, и собираем заново
+# Очищаем и собираем заново
 RUN rm -rf build && mkdir build && cd build && \
     cmake .. && make -j$(nproc)
 

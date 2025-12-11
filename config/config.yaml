@@ -1,0 +1,14 @@
+camera:
+  width: 640
+  height: 480
+  fx: 500.0
+  fy: 500.0
+  cx: 320.0
+  cy: 240.0
+
+detector:
+  type: "yolo"
+  weights: "yolov8n.pt" # Автоматически скачается ultralytics
+
+dataset:
+  path: "/app/data/video.mp4"

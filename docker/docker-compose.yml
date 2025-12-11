@@ -1,0 +1,9 @@
+services:
+  slam:
+    build: .
+    runtime: nvidia
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./python:/app/python
+    command: python3 python/main.py

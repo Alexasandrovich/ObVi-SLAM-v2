@@ -1,14 +1,13 @@
 import sys
+import os
+sys.path.append("/app/build")
+import park_slam_cpp
+
 import cv2
 import numpy as np
 import yaml
-import os
 import time
 from ultralytics import YOLO
-
-# Подключаем наш C++ модуль
-sys.path.append("/app/build")
-import park_slam_cpp
 from tracker import ObjectTracker
 
 def load_config(path):
@@ -47,8 +46,20 @@ def main():
         return
 
     print(" -> Initializing ORB-SLAM3 (C++)... This might take a few seconds.")
-    # use_viewer=True включает GUI
-    orbslam = park_slam_cpp.OrbSlam(vocab_path, orb_settings_path, True)
+    print(f"    Vocab exists: {os.path.exists(vocab_path)}")
+    print(f"    Settings exists: {os.path.exists(orb_settings_path)}")
+
+    import signal
+    import faulthandler
+    faulthandler.enable()
+
+    try:
+        print("    Creating OrbSlam object...")
+        orbslam = park_slam_cpp.OrbSlam(vocab_path, orb_settings_path, False)
+        print("    OrbSlam created successfully!")
+    except Exception as e:
+        print(f"    Exception: {e}")
+        return
 
     # 2. Инициализация GTSAM (Backend для объектов)
     print(" -> Initializing GTSAM Kernel...")

@@ -1,29 +1,32 @@
 %YAML:1.0
 ---
 
-# Camera calibration and distortion
 File.version: "1.0"
-Camera.type: "PinHole"
 
-# Calibration
+# Camera Parameters
+Camera.type: "PinHole"
+Camera.width: 1920
+Camera.height: 1080
+Camera.fps: 30
+Camera.RGB: 1
+
+# Camera 1 Parameters
 Camera1.fx: 1174.0
 Camera1.fy: 1174.0
 Camera1.cx: 960.0
 Camera1.cy: 540.0
+
+# Distortion
 Camera1.k1: 0.0
 Camera1.k2: 0.0
 Camera1.p1: 0.0
 Camera1.p2: 0.0
-Camera.width: 1920
-Camera.height: 1080
+Camera1.k3: 0.0
 
-# Camera frames per second
-Camera.fps: 30.0
+ThDepth: 40.0
+DepthMapFactor: 1.0
 
-# Color order (0: BGR, 1: RGB. It is ignored if images are grayscale)
-Camera.RGB: 1
-
-# ORB Features Parameters
+# ORB Extractor Parameters
 ORBextractor.nFeatures: 1000
 ORBextractor.scaleFactor: 1.2
 ORBextractor.nLevels: 8
@@ -32,12 +35,12 @@ ORBextractor.minThFAST: 7
 
 # Viewer Parameters
 Viewer.KeyFrameSize: 0.05
-Viewer.KeyFrameLineWidth: 1
+Viewer.KeyFrameLineWidth: 1.0
 Viewer.GraphLineWidth: 0.9
-Viewer.PointSize: 2
+Viewer.PointSize: 2.0
 Viewer.CameraSize: 0.08
-Viewer.CameraLineWidth: 3
-Viewer.ViewpointX: 0
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
 Viewer.ViewpointY: -0.7
 Viewer.ViewpointZ: -1.8
-Viewer.ViewpointF: 500
+Viewer.ViewpointF: 500.0

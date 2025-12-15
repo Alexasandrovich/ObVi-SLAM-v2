@@ -1,50 +1,69 @@
+Система семантического картографирования, объединяющая одометрию робота, компьютерное зрение и графовую оптимизацию.
+
+## Структура проекта
+
+```
 ./
-├── CMakeLists.txt                  # Основной файл сборки C++ ядра
-├── run.sh                          # Единый скрипт запуска (Docker wrapper)
-├── README.md                       # Инструкция
+├── CMakeLists.txt          # Сборка C++ ядра
+├── run.sh                  # Скрипт запуска (Docker wrapper)
+├── README.md
 │
-├── config/                         # Все конфигурационные файлы
-│   ├── config.yaml                 # Главный конфиг (пути, параметры логики)
-│   ├── sensors.yaml                # Калибровка (K камеры, T_lidar_cam, высота)
-│   └── glim/                       # Конфиги для GLIM
+├── config/                 # Конфигурация
+│   ├── config.yaml         # Основные параметры системы
+│   ├── sensors.yaml        # Калибровка сенсоров (K, T_lidar_cam)
+│   └── glim/
 │       └── config_outdoor.json
 │
-├── data/                           # Папка для данных (mount volume)
-│   ├── video.mp4                   # Видеопоток
-│   └── lidar.mcap                  # ROS2 MCAP с топиком (/rslidar_points)
+├── data/                   # Входные данные (монтируется как volume)
+│   ├── video.mp4           # Видеопоток
+│   └── lidar.mcap          # ROS2 MCAP (/rslidar_points)
 │
-├── docker/                         # Окружение
-│   ├── Dockerfile                  # Сборка образа (CUDA, GLIM, GTSAM)
-│   ├── docker-compose.yml          # Параметры запуска
-│   └── entrypoint.sh               # Скрипт инициализации внутри контейнера
+├── docker/                 # Окружение
+│   ├── Dockerfile          # Образ (CUDA, GLIM, GTSAM)
+│   ├── docker-compose.yml
+│   └── entrypoint.sh
 │
-├── include/                        # C++ Заголовки (Интерфейсы)
-│   └── obvi/
-│       ├── System.hpp              # Главный класс-фасад (виден из Python)
-│       ├── types.hpp               # Общие структуры (Pose, Landmark)
-│       ├── odometry/
-│       │   ├── OdomBase.hpp        # Абстрактный интерфейс одометрии
-│       │   └── GlimOdom.hpp        # Заголовок обертки над GLIM
-│       └── mapping/
-│           └── SemanticGraph.hpp   # Заголовок графа (GTSAM)
-│
-├── src/                            # C++ Реализация
-│   ├── System.cpp                  # Реализация фасада
-│   ├── bindings.cpp                # Pybind11 (создает модуль obvi_cpp)
+├── include/obvi/           # C++ заголовки
+│   ├── System.hpp          # Главный фасад
+│   ├── types.hpp           # Pose, Landmark
 │   ├── odometry/
-│   │   └── GlimOdom.cpp            # Реализация связи с GLIM API
+│   │   ├── OdomBase.hpp    # Интерфейс одометрии
+│   │   └── GlimOdom.hpp    # Обёртка GLIM
 │   └── mapping/
-│       └── SemanticGraph.cpp       # Реализация факторов GTSAM
+│       └── SemanticGraph.hpp
 │
-├── python/                         # Python Frontend
-│   ├── main.py                     # Точка входа (цикл обработки)
+├── src/                    # C++ реализация
+│   ├── System.cpp
+│   ├── bindings.cpp        # Pybind11 → obvi_cpp
+│   ├── odometry/
+│   │   └── GlimOdom.cpp
+│   └── mapping/
+│       └── SemanticGraph.cpp
+│
+├── python/                 # Python frontend
+│   ├── main.py             # Точка входа
 │   ├── core/
-│   │   ├── loader.py               # Синхронизатор MP4 и MCAP
-│   │   └── visualizer.py           # Отрисовка карты и кадра
+│   │   ├── loader.py       # Синхронизация MP4 + MCAP
+│   │   └── visualizer.py
 │   └── perception/
-│       ├── detector.py             # YOLOv8 (сегментация)
-│       └── geometry.py             # Расчет глубины
+│       ├── detector.py     # YOLOv8
+│       └── geometry.py     # Расчёт глубины
 │
-└── thirdparty/                     # Внешние библиотеки (git submodules)
-    ├── glim/                       # Lidar Odometry lib
-    └── gtsam/                      # Factor Graph lib
+└── thirdparty/             # Git submodules
+    ├── glim/
+    └── gtsam/
+```
+
+## Быстрый старт
+
+```bash
+# Сборка и запуск
+./run.sh
+```
+
+## Зависимости
+
+- CUDA 11.8+
+- GLIM (LiDAR odometry)
+- GTSAM (factor graph optimization)
+- YOLOv8 (semantic segmentation)

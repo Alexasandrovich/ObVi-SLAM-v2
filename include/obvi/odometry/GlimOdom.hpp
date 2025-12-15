@@ -7,7 +7,7 @@ namespace obvi {
 
   class GlimOdom : public OdomBase {
   public:
-    // config_path: путь к папке с конфигами (где лежит config_odometry.json)
+    // config_path: путь к папке с конфигами (где лежит config_odometry_ct.json)
     GlimOdom(const std::string& config_path);
     ~GlimOdom() override;
 

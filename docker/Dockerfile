@@ -103,10 +103,5 @@ RUN pip3 install --no-cache-dir \
     numpy
 
 WORKDIR /app
-COPY . .
-
-# ENTRYPOINT
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/bin/bash"]

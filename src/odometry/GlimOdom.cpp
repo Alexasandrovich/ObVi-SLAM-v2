@@ -1,6 +1,7 @@
 #include "obvi/odometry/GlimOdom.hpp"
 
-// GLIM Headers
+// GLIM & GTSAM Points Headers
+#include <gtsam/geometry/Pose3.h>
 #include <glim/util/config.hpp>
 #include <glim/util/time_keeper.hpp>
 #include <glim/preprocess/cloud_preprocessor.hpp>
@@ -21,17 +22,34 @@ namespace obvi {
     std::mutex pose_mutex;
 
     Impl(const std::string& config_path) {
-      glim::GlobalConfig::instance(config_path);
+      // Загружаем конфиги
+      if (!config_path.empty()) {
+        glim::GlobalConfig::instance(config_path);
+      }
+
       time_keeper.reset(new glim::TimeKeeper);
       preprocessor.reset(new glim::CloudPreprocessor);
 
-      glim::Config config_odom(glim::GlobalConfig::get_config_path("config_odometry"));
-      std::string odom_so = config_odom.param<std::string>("odometry_estimation", "so_name", "libodometry_estimation_cpu.so");
+      // Загружаем модуль одометрии
+      // В реальном конфиге должно быть прописано имя .so файла
+      // Здесь хардкодим fallback, если конфиг пустой
+      std::string odom_so = "libodometry_estimation_ct.so";
+
+      // Пытаемся прочитать из конфига, если он есть
+      try {
+        glim::Config config_odom(glim::GlobalConfig::get_config_path("config_odometry"));
+        odom_so = config_odom.param<std::string>("odometry_estimation", "so_name", "libodometry_estimation_cpu.so");
+      } catch (...) {
+        spdlog::warn("Config not found, using default CPU odometry");
+      }
 
       auto odom_base = glim::OdometryEstimationBase::load_module(odom_so);
-      if (!odom_base) throw std::runtime_error("Failed to load GLIM module: " + odom_so);
+      if (!odom_base) {
+        throw std::runtime_error("Failed to load GLIM module: " + odom_so +
+                                 ". Check LD_LIBRARY_PATH and if glim is installed.");
+      }
 
-      odometry.reset(new glim::AsyncOdometryEstimation(odom_base, false)); // false = no IMU
+      odometry.reset(new glim::AsyncOdometryEstimation(odom_base, false));
     }
 
     void update() {
@@ -54,14 +72,17 @@ namespace obvi {
     // Convert flat float array -> Vector4d points
     std::vector<Eigen::Vector4d> points(num_points);
     for(size_t i=0; i<num_points; ++i) {
+      // x, y, z, 1.0
       points[i] << data[i*4], data[i*4+1], data[i*4+2], 1.0;
-      // intensity ignored for now or stored separately
     }
 
-    auto frame = std::make_shared<gtsam_points::PointCloudCPU>(points);
     auto glim_raw = std::make_shared<glim::RawPoints>();
-    glim_raw->points = frame->points;
     glim_raw->stamp = timestamp;
+    glim_raw->points.resize(num_points);
+
+    for(size_t i=0; i<num_points; ++i) {
+      glim_raw->points[i] << data[i*4], data[i*4+1], data[i*4+2], 1.0;
+    }
 
     impl_->time_keeper->process(glim_raw);
     auto pre = impl_->preprocessor->preprocess(glim_raw);

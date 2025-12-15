@@ -5,19 +5,16 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     runtime: nvidia
-    network_mode: host
-    privileged: true
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
       - DISPLAY=${DISPLAY}
       - QT_X11_NO_MITSHM=1
       - XDG_RUNTIME_DIR=/tmp/runtime
-      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libffi.so.7 /usr/lib/x86_64-linux-gnu/libtiff.so.5
+      - PYTHONPATH=/app/build:/app/python
     volumes:
-      - ../config:/app/config
-      - ../data:/app/data
-      - ../python:/app/python
+      - ..:/app
+      - ./entrypoint.sh:/entrypoint.sh
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ~/.Xauthority:/root/.Xauthority:rw
-    command: python3 -u python/main.py
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]

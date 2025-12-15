@@ -13,6 +13,9 @@ from perception.detector import ObjectDetector
 from perception.geometry import VisualGeometry
 
 def load_config(path):
+    if not os.path.exists(path):
+        print(f"ERROR: Config file not found: {path}")
+        return None
     with open(path, 'r') as f:
         return yaml.safe_load(f)
 
@@ -22,6 +25,9 @@ def main():
     # Конфиги
     cfg = load_config("/app/config/config.yaml")
     sensor_cfg = load_config("/app/config/sensors.yaml")
+    if sensor_cfg is None:
+        print("CRITICAL: Failed to load sensor config!")
+        return
 
     # 1. Инициализация C++ ядра
     glim_config_path = "/app/config/glim"

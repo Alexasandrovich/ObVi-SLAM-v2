@@ -33,57 +33,63 @@ RUN apt-get update && apt-get install -y \
     libglm-dev libglfw3-dev \
     libpng-dev libjpeg-dev libtiff-dev \
     libpcl-dev \
+    libeigen3-dev  \
     python3-pip python3-dev \
     libxcb-xinerama0 libxcb-cursor0 libx11-xcb1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 4. GTSAM
 WORKDIR /root/3rd_party
+
+# 4. GTSAM (версия 4.3a0)
 RUN git clone https://github.com/borglab/gtsam && \
-    cd gtsam && git checkout 4.2a9 && \
+    cd gtsam && \
+    git checkout 4.3a0 && \
     mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release \
-             -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
+    cmake .. -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
              -DGTSAM_BUILD_TESTS=OFF \
              -DGTSAM_WITH_TBB=OFF \
              -DGTSAM_USE_SYSTEM_EIGEN=ON \
              -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF && \
-    make -j$(nproc) && make install && \
-    cd /root && rm -rf 3rd_party/gtsam
+    make -j$(nproc) && \
+    make install && \
+    cd /root/3rd_party && rm -rf gtsam
 
-# 5. Iridescence
-WORKDIR /root/3rd_party
+# 5. Iridescence (Визуализация)
 RUN git clone https://github.com/koide3/iridescence --recursive && \
-    cd iridescence && mkdir build && cd build && \
+    cd iridescence && \
+    mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j$(nproc) && make install && \
-    cd /root && rm -rf 3rd_party/iridescence
+    make -j$(nproc) && \
+    make install && \
+    cd /root/3rd_party && rm -rf iridescence
 
 # 6. gtsam_points (CUDA)
-WORKDIR /root/3rd_party
-RUN git clone "$GTSAM_POINTS_REPOPATH" -b "$GTSAM_POINTS_BRANCH" && \
-    cd gtsam_points && mkdir build && cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_CUDA=ON && \
-    make -j$(nproc) && make install && \
-    cd /root && rm -rf 3rd_party/gtsam_points
+RUN git clone https://github.com/koide3/gtsam_points && \
+    cd gtsam_points && \
+    mkdir build && cd build && \
+    cmake .. -DBUILD_WITH_CUDA=ON && \
+    make -j$(nproc) && \
+    make install && \
+    cd /root/3rd_party && rm -rf gtsam_points
 
-# 7. GLIM (Build & Install)
-WORKDIR /root/3rd_party
-RUN git clone "$GLIM_REPOPATH" -b "$GLIM_BRANCH" && \
-    cd glim && mkdir build && cd build && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_WITH_CUDA=ON \
-        -DBUILD_WITH_VIEWER=ON \
-        -DBUILD_WITH_MARCH_NATIVE=OFF \
-        -DBUILD_WITH_OPENCV=ON && \
-    make -j$(nproc) && make install && \
-    # Важно: копируем конфиги GLIM в глобальное место или в /app/config
-    # Но GLIM ищет их относительно бинарника или по путям.
-    # Мы скопируем их в /usr/local/share/glim/config для надежности
+# 7. GLIM
+RUN git clone https://github.com/koide3/glim && \
+    cd glim && \
+    mkdir build && cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release \
+             -DBUILD_WITH_CUDA=ON \
+             -DBUILD_WITH_VIEWER=ON \
+             -DBUILD_WITH_MARCH_NATIVE=OFF \
+             -DBUILD_WITH_OPENCV=OFF && \
+    make -j$(nproc) && \
+    make install && \
+    # Копируем конфиги GLIM в системную папку, чтобы враппер мог их найти
     mkdir -p /usr/local/share/glim && \
     cp -r ../config /usr/local/share/glim/ && \
-    cd /root && rm -rf 3rd_party/glim
+    cd /root/3rd_party && rm -rf glim
+
+# Обновляем кэш библиотек
+RUN ldconfig
 
 # 8. Python Deps
 RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
@@ -99,5 +105,8 @@ RUN pip3 install --no-cache-dir \
 WORKDIR /app
 COPY . .
 
-ENTRYPOINT ["/app/docker/entrypoint.sh"]
+# ENTRYPOINT
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/bin/bash"]

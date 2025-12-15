@@ -1,17 +1,11 @@
-camera:
-  width: 1920
-  height: 1080
-  fx: 1174.0
-  fy: 1174.0
-  cx: 960.0
-  cy: 540.0
-
 ai:
-  model_path: "yolov8n.pt"
-  target_classes: [0, 1, 2, 3, 5, 7, 13] # Люли, машины, лавочки
+  model_path: "yolov8n-seg.pt" # Используем модель для сегментации!
+  target_classes: [0, 1, 2, 3, 5, 7, 13]
   conf_threshold: 0.5
 
 system:
   video_path: "/app/data/video.mp4"
+  mcap_path: "/app/data/lidar.mcap"
+
   map_scale: 20.0
   map_size: 800

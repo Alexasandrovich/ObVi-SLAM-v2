@@ -89,6 +89,8 @@ namespace obvi {
     impl_->odometry->insert_frame(pre);
 
     impl_->update();
+    Eigen::Matrix4d p = impl_->current_pose;
+    Eigen::Vector3d t = p.block<3,1>(0,3);
   }
 
   PoseMatrix GlimOdom::get_pose() {

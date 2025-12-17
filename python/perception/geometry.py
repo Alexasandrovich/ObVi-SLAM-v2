@@ -2,12 +2,11 @@ import cv2
 import numpy as np
 import math
 
-# --- 1. Transformation Helpers ---
+# --- 1. Transformation Helpers (Recreating missing imports) ---
 
 def get_rot_matrix_from_angles(angles):
     """
-    Создает матрицу поворота из углов Эйлера.
-    angles: np.array([roll, pitch, yaw]) в радианах
+    angles: [pitch, roll, yaw] in radians
     """
     sin_x, cos_x = math.sin(angles[0]), math.cos(angles[0])
     sin_y, cos_y = math.sin(angles[1]), math.cos(angles[1])
@@ -29,22 +28,27 @@ def get_rot_matrix_from_angles(angles):
 
 def get_affine_matrix(R, t):
     """
-    Создает аффинную матрицу 4x4 из R (3x3) и t (3x1).
+    Returns 3x4 matrix [R | t]
     """
-    T = np.eye(4)
+    T = np.zeros((3, 4))
     T[:3, :3] = R
     T[:3, 3] = t.flatten()
     return T
 
-# --- 2. Full Camera Class (Cleaned up) ---
+# --- 2. Camera Class (Ported from user snippet) ---
 
 class Camera:
-    def __init__(self, R=None, t=None, f=None, principal_point=None, D=None, sz=None):
+    def __init__(self, R=None, t=None, f=None, principal_point=None, D=None, sz=None, logger=None):
         """
         Class Camera.
-        xy axes of the camera are in the image axes and z axes are forward,
-        with the camera position being y-forward, x-right, z-up.
+        @param R: 3x3 rotation matrix
+        @param t: 3-D translation vector
+        @param f: focal length
+        @param principal_point: optical center
+        @param D: distortion
+        @param sz: image size (width, height)
         """
+        self.logger = logger
         if R is None or t is None or f is None or principal_point is None:
             self.R = R
             self.t = t
@@ -74,9 +78,7 @@ class Camera:
         self.camera_axis_remap = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
 
     def read_from_yaml_file(self, yaml_path):
-        """
-        Read camera config from yaml file (OpenCV format).
-        """
+        """Read camera config from yaml file."""
         try:
             fs = cv2.FileStorage(yaml_path, cv2.FILE_STORAGE_READ)
             if not fs.isOpened():
@@ -84,9 +86,8 @@ class Camera:
 
             self.K = np.array(fs.getNode("K").mat())
             self.D = np.array(fs.getNode("D").mat())
-
             self.R = np.array(fs.getNode("r").mat())
-            # Handle rotation: if vector -> convert to matrix
+
             if self.R.shape == (3, 1) or self.R.shape == (1, 3):
                 # В файле градусы
                 angles_rad = np.deg2rad(self.R.flatten())
@@ -103,8 +104,6 @@ class Camera:
                 self.K, self.D, None, self.K, tuple(self.sz), cv2.CV_32FC1)
 
             fs.release()
-            print(f"[Camera] Loaded config. Size: {self.sz}, Height(t_z): {self.t[2]}")
-
         except Exception as e:
             print(f"[Camera] Error parsing YAML {yaml_path}: {str(e)}")
             self.K = None
@@ -113,84 +112,36 @@ class Camera:
         return self.camera_axis_remap.T @ self.R
 
     def compute_projection_matrix(self, meter_height):
-        """
-        Computes the projection matrix used for reprojecting image points
-        into world coordinates at a given height.
-        """
-        # 1. Получаем полную аффинную матрицу 4x4 (World -> Camera)
-        affine_full = get_affine_matrix(self.get_camera_axis_remap_R(), self.t)
-
-        # 2. P_extrinsic (3x4) = [R | t]
-        affine_3x4 = affine_full[:3, :]
-
-        # 3. Projection Matrix P = K * [R | t] -> (3x4)
-        P = np.dot(self.K, affine_3x4)
-
-        # 4. Construct solving matrix A (3x3)
-        # We solve for X, Y given Z=meter_height.
-        # [u*w, v*w, w]^T = P * [X, Y, Z, 1]^T
-        # Z is fixed constant.
+        # Using 3x4 affine matrix here to fix the shape mismatch error
+        P = np.dot(self.K, get_affine_matrix(self.get_camera_axis_remap_R(), self.t))
         A = np.zeros((3, 3))
         for k in range(3):
-            A[k, 0] = P[k, 0] # Coeff for X
-            A[k, 1] = P[k, 1] # Coeff for Y
-            # P[k, 2] * Z + P[k, 3] * 1 becomes the constant term
+            A[k, 0] = P[k, 0]
+            A[k, 1] = P[k, 1]
             A[k, 2] = meter_height * P[k, 2] + P[k, 3]
         return A
 
     def reproject_pt_with_height(self, pixel, height_meter=0.0):
-        """
-        Reprojects a single pixel coordinate from image space to world space
-        at a specified height.
-        @return: [x, y, z] list or None
-        """
         if self.K is None: return None
-
         h = height_meter
         A = self.compute_projection_matrix(h)
-
-        # Solve A * [x, y, 1] = s * [u, v, 1]
-        # Inverse mapping: [x, y, 1] ~ A_inv * [u, v, 1]
         try:
             xyw = np.linalg.inv(A) @ np.array([pixel[0], pixel[1], 1])
         except np.linalg.LinAlgError:
             return None
 
-        if xyw[2] == 0:
-            return None
+        if xyw[2] == 0: return None
 
-        # Normalize homogeneous coords
-        x = xyw[0] / xyw[2]
-        y = xyw[1] / xyw[2]
+        return [xyw[0] / xyw[2], xyw[1] / xyw[2], h]
 
-        return [x, y, h]
-
-    def undistort_image(self, img):
-        return cv2.remap(img, self.mapx, self.mapy, interpolation=cv2.INTER_LINEAR)
-
-# --- 3. Wrapper for your architecture ---
+# --- 3. Wrapper for pipeline ---
 
 class VisualGeometry:
     def __init__(self, calib_path):
-        """
-        calib_path: path to sensors.yaml
-        """
         self.camera = Camera()
         self.camera.read_from_yaml_file(calib_path)
 
     def pixel_to_3d_ground(self, u, v):
-        """
-        Calculates 3D position of a pixel on ground plane (Z=0).
-        Returns [x, y, z] in World Frame (defined by calib).
-        """
         pt3d = self.camera.reproject_pt_with_height((u, v), height_meter=0.0)
-
-        if pt3d is None:
-            return None
-
-        # Basic filtering (e.g. don't pick points 1km away)
-        dist = np.sqrt(pt3d[0]**2 + pt3d[1]**2)
-        if dist > 50.0 or dist < 1.0:
-            return None
-
-        return pt3d
+        if pt3d is None: return None
+        return [pt3d[0], pt3d[1], pt3d[2]]

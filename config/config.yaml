@@ -1,11 +1,15 @@
 ai:
-  model_path: "yolov8n-seg.pt" # Используем модель для сегментации!
-  target_classes: [0, 1, 2, 3, 5, 7, 13]
+  model_path: "yolov8n-seg.pt"
+  # 1:bicycle, 2:car, 3:motorcycle, 5:bus, 7:truck, 9:traffic light, 11:stop sign, 13:bench
+  target_classes: [1, 2, 3, 5, 7, 9, 11, 13]
   conf_threshold: 0.5
 
 system:
   video_path: "/app/data/video.mp4"
   mcap_path: "/app/data/lidar.mcap"
-
+  lidar_topic: "/input_cloud"
   map_scale: 20.0
   map_size: 800
+
+  view_offset_deg: -90.0
+  lidar_align_deg: -180.0

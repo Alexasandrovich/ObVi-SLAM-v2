@@ -1,9 +1,28 @@
-camera:
-  fx: 1174.0
-  fy: 1174.0
-  cx: 960.0
-  cy: 540.0
-  height: 1.52  # Высота камеры над землей (для монокулярной проекции)
-
-lidar:
-  topic: "/rslidar_points"
+%YAML:1.0
+---
+deviceType: Camera
+K: !!opencv-matrix
+  rows: 3
+  cols: 3
+  dt: d
+  data: [ 1174.0, 0.0, 960.0,
+          0.0, 1174.0, 540.0,
+          0.0, 0.0, 1.0 ]
+D: !!opencv-matrix
+  rows: 5
+  cols: 1
+  dt: d
+  data: [ 0.0, 0.0, 0.0, 0.0, 0.0 ]
+r: !!opencv-matrix
+  rows: 3
+  cols: 1
+  dt: d
+  data: [ -20.0, 0.0, 0.0 ]
+t: !!opencv-matrix
+  rows: 3
+  cols: 1
+  dt: d
+  data: [ 0.0, 0.0, 1.52 ]
+sz: [1920, 1080]
+remapped:
+  []

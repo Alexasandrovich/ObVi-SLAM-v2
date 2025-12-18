@@ -20,7 +20,7 @@ def load_config(path):
         return yaml.safe_load(f)
 
 def main():
-    print("=== ObVi-SLAM v3 Starting ===")
+    print("=== ObVi-SLAM v2 Starting ===")
 
     # 1. Загружаем основной конфиг (Python YAML)
     cfg = load_config("/app/config/config.yaml")

@@ -113,6 +113,4 @@ class Visualizer:
         ])
         cv2.fillPoly(self.map_img, [pts_robot], (0, 0, 255))
 
-        # ИЗМЕНЕНИЕ: Оси убраны
-
         return vis_frame, self.map_img

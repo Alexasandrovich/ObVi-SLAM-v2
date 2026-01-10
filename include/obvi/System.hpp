@@ -9,7 +9,9 @@ namespace obvi {
   class System {
   public:
     // config_file: путь к главному yaml конфигу
-    System(const std::string& config_file, const std::string& glim_config_path);
+    System(const std::string& config_file,
+           const std::string& glim_config_path,
+           const std::vector<double>& lidar_extrinsics);
     ~System();
 
     // Основной цикл обработки

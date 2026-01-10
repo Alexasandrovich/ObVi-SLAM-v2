@@ -10,6 +10,4 @@ system:
   lidar_topic: "/input_cloud"
   map_scale: 20.0
   map_size: 800
-
-  view_offset_deg: -90.0
-  lidar_align_deg: -180.0
+  lidar_extrinsics: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

@@ -13,16 +13,18 @@ namespace obvi {
     std::unique_ptr<GlimOdom> odom;
     std::unique_ptr<SemanticGraph> mapper;
 
-    Impl(const std::string& config, const std::string& glim_conf) {
+    Impl(const std::string& config, const std::string& glim_conf, const std::vector<double>& extrinsics) {
       // Инициализируем модули
-      odom = std::make_unique<GlimOdom>(glim_conf);
+      odom = std::make_unique<GlimOdom>(glim_conf, extrinsics);
       mapper = std::make_unique<SemanticGraph>();
     }
   };
 
 // Конструктор
-  System::System(const std::string& config_file, const std::string& glim_config_path)
-          : impl_(std::make_unique<Impl>(config_file, glim_config_path)) {}
+  System::System(const std::string& config_file,
+                 const std::string& glim_config_path,
+                 const std::vector<double>& lidar_extrinsics)
+          : impl_(std::make_unique<Impl>(config_file, glim_config_path, lidar_extrinsics)) {}
 
 // Деструктор (обязателен в cpp при использовании unique_ptr и Pimpl)
   System::~System() = default;

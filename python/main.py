@@ -29,7 +29,11 @@ def main():
     # 2. Инициализация C++ (GLIM + GTSAM)
     # Путь к папке с конфигами GLIM
     glim_config_path = "/app/config/glim"
-    system = obvi_cpp.System(config_file="", glim_config_path=glim_config_path)
+    lidar_ext = cfg['system'].get('lidar_extrinsics', [0.0]*6)
+    print(f"Lidar extrinsics: {lidar_ext}")
+    system = obvi_cpp.System(config_file="",
+                             glim_config_path=glim_config_path,
+                             lidar_extrinsics=lidar_ext)
 
     # 3. Perception
     print("Loading AI models...")
@@ -78,7 +82,7 @@ def main():
         pose = system.get_pose()
         map_objs = system.get_map()
 
-        vis_frame, vis_map = viz.draw(frame, pose, map_objs, detections, lidar_flat)
+        vis_frame, vis_map = viz.draw(frame, pose, map_objs, detections, lidar_flat, raw_pts=obs_coords)
 
         cv2.imshow("Camera", cv2.resize(vis_frame, (960, 540)))
         cv2.imshow("Map (Follow)", vis_map)

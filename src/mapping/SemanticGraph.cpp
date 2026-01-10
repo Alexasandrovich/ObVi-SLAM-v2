@@ -9,10 +9,12 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/inference/Symbol.h>
-
-// FIX: Headers for Expressions
 #include <gtsam/nonlinear/ExpressionFactor.h>
 #include <gtsam/slam/expressions.h>
+
+// logging
+#include <spdlog/spdlog.h>
+#include <spdlog/fmt/ostr.h>
 
 using namespace gtsam;
 
@@ -48,21 +50,38 @@ namespace obvi {
       odom_noise = noiseModel::Diagonal::Sigmas((Vector(6) << 0.05, 0.05, 0.05, 0.1, 0.1, 0.1).finished());
       // Шум измерений (0.5 m)
       meas_noise = noiseModel::Isotropic::Sigma(3, 0.5);
+
+      // logging
+      spdlog::set_level(spdlog::level::info);
+      spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
     }
 
     int find_correspondence(const Point3& global_pos, int class_id) {
       double min_dist = 2.0;
       int best_id = -1;
 
+      spdlog::debug("find_corr: searching for class {} at [{:.2f}, {:.2f}, {:.2f}]",
+                    class_id, global_pos.x(), global_pos.y(), global_pos.z());
       for (const auto& lm : landmarks) {
         if (lm.class_id != class_id) continue;
 
         double d = distance3(lm.pos, global_pos);
+        spdlog::debug(" -> canditate ID {} (Class {}, pos [{:.2f}, {:.2f}, {:.2f}]): Dist {:.2f}m",
+                      lm.id, lm.class_id, lm.pos.x(), lm.pos.y(), lm.pos.z(), d);
         if (d < min_dist) {
           min_dist = d;
           best_id = lm.id;
         }
       }
+
+      if (best_id != -1)
+      {
+        spdlog::debug(" => matched ID {}", best_id);
+      }else
+      {
+        spdlog::debug(" => no match found. New object constructing...");
+      }
+
       return best_id;
     }
   };
@@ -88,10 +107,16 @@ namespace obvi {
       impl_->initial_estimates.insert(symbol_shorthand::X(impl_->pose_cnt), current_pose);
     }
     impl_->prev_pose = current_pose;
+    spdlog::debug("Current pose from odometry: [{:.2f}, {:.2f}, {:.2f}]",
+                  current_pose.x(), current_pose.y(), current_pose.z());
 
     // --- 2. Объекты (Landmarks) ---
+    int obj_idx = 0;
     for (const auto& obs : observations) {
       Point3 local_point(obs.local_pos.x(), obs.local_pos.y(), obs.local_pos.z());
+      spdlog::debug("Local detection pos: [{:.2f}, {:.2f}, {:.2f}]",
+                    local_point.x(), local_point.y(), local_point.z());
+
       Point3 global_point = current_pose.transformFrom(local_point);
 
       int lm_id = impl_->find_correspondence(global_point, obs.class_id);

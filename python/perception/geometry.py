@@ -295,15 +295,10 @@ class VisualGeometry:
 
     def pixel_to_3d_ground(self, u, v):
         """
-        Преобразует пиксель в 3D координаты в системе робота.
-
-        Камера возвращает: X=право, Y=вперёд, Z=вверх
-        Робот/GLIM ожидает: X=вперёд, Y=влево, Z=вверх
+        Преобразует пиксель в 3D координаты в системе робота
         """
         pt3d = self.camera.reproject_pt_with_height((u, v), height_meter=0.0)
         if pt3d is None:
             return None
 
-        cam_x, cam_y, cam_z = pt3d[0][0], pt3d[1][0], pt3d[2][0]
-
-        return [cam_x, cam_y, cam_z]
+        return [-pt3d[0][0], -pt3d[1][0], pt3d[2][0]]

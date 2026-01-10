@@ -10,6 +10,7 @@
 
 #include <spdlog/spdlog.h>
 #include <mutex>
+#include <string>
 
 namespace obvi {
 
@@ -20,8 +21,10 @@ namespace obvi {
 
     Eigen::Matrix4d current_pose = Eigen::Matrix4d::Identity();
     std::mutex pose_mutex;
+    Eigen::Isometry3d T_body_lidar;
+    bool use_transform = false;
 
-    Impl(const std::string& config_path) {
+    Impl(const std::string& config_path, const std::vector<double>& extrinsics) {
       // Загружаем конфиги
       if (!config_path.empty()) {
         glim::GlobalConfig::instance(config_path);
@@ -50,6 +53,30 @@ namespace obvi {
       }
 
       odometry.reset(new glim::AsyncOdometryEstimation(odom_base, false));
+
+      // настройки экстринсиков лидара для дальнейшего выравнивания с ОС камеры
+      if (extrinsics.size() == 6)
+      {
+        double x = extrinsics[0];
+        double y = extrinsics[1];
+        double z = extrinsics[2];
+        double roll   = extrinsics[3] * M_PI / 180.0;
+        double pitch  = extrinsics[4] * M_PI / 180.0;
+        double yaw    = extrinsics[5] * M_PI / 180.0;
+
+        T_body_lidar = Eigen::Isometry3d::Identity();
+        T_body_lidar.translation() << x, y, z;
+        T_body_lidar.linear() = (Eigen::AngleAxisd(yaw, Eigen::Vector3d::UnitZ()) *
+                                 Eigen::AngleAxisd(pitch, Eigen::Vector3d::UnitY()) *
+                                 Eigen::AngleAxisd(roll, Eigen::Vector3d::UnitX())).toRotationMatrix();
+        if(!T_body_lidar.isApprox(Eigen::Isometry3d::Identity()))
+        {
+          use_transform = true;
+        }
+      }else{
+        throw std::runtime_error("Failed to parse extrincics for lidar - must have 6 numbers, but it has " + std::to_string(extrinsics.size()));
+      }
+
     }
 
     void update() {
@@ -63,8 +90,8 @@ namespace obvi {
     }
   };
 
-  GlimOdom::GlimOdom(const std::string& config_path)
-          : impl_(std::make_unique<Impl>(config_path)) {}
+  GlimOdom::GlimOdom(const std::string& config_path, const std::vector<double>& extrinsics)
+          : impl_(std::make_unique<Impl>(config_path, extrinsics)) {}
 
   GlimOdom::~GlimOdom() = default;
 
@@ -80,8 +107,19 @@ namespace obvi {
     glim_raw->stamp = timestamp;
     glim_raw->points.resize(num_points);
 
-    for(size_t i=0; i<num_points; ++i) {
-      glim_raw->points[i] << data[i*4], data[i*4+1], data[i*4+2], 1.0;
+    if(impl_->use_transform)
+    {
+      // использование нетриваиальных экстринсиков
+      for(size_t i = 0; i < num_points; ++i)
+      {
+        Eigen::Vector3d p(data[i*4], data[i*4+1], data[i*4+2]);
+        p = impl_->T_body_lidar * p;
+        glim_raw->points[i] << p.x(), p.y(), p.z(), 1.0;
+      }
+    }else{
+      for(size_t i=0; i<num_points; ++i) {
+        glim_raw->points[i] << data[i*4], data[i*4+1], data[i*4+2], 1.0;
+      }
     }
 
     impl_->time_keeper->process(glim_raw);
@@ -89,8 +127,6 @@ namespace obvi {
     impl_->odometry->insert_frame(pre);
 
     impl_->update();
-    Eigen::Matrix4d p = impl_->current_pose;
-    Eigen::Vector3d t = p.block<3,1>(0,3);
   }
 
   PoseMatrix GlimOdom::get_pose() {

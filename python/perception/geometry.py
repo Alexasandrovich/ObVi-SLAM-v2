@@ -301,4 +301,13 @@ class VisualGeometry:
         if pt3d is None:
             return None
 
-        return [-pt3d[0][0], -pt3d[1][0], pt3d[2][0]]
+        x_raw = pt3d[0][0]
+        y_raw = pt3d[1][0]
+        z_raw = pt3d[2][0]
+
+        # Коррекция осей
+        x_robot_forward = -x_raw
+        y_robot_left    = -y_raw
+        z_robot_up      =  z_raw
+
+        return [x_robot_forward, y_robot_left, z_robot_up]

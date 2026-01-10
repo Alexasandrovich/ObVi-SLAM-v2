@@ -1,6 +1,5 @@
 #include "obvi/mapping/SemanticGraph.hpp"
 
-// GTSAM Headers
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/Point3.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
@@ -11,14 +10,22 @@
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/nonlinear/ExpressionFactor.h>
 #include <gtsam/slam/expressions.h>
+#include <gtsam/linear/NoiseModel.h>
 
-// logging
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
+
+#include <list>
 
 using namespace gtsam;
 
 namespace obvi {
+
+  struct TrackerParams {
+    int min_hits_to_confirm = 90;    // Порог превращения в постоянный объект
+    int max_misses_to_archive = 30;  // Порог "потери" объекта (перевод в архив)
+    double match_dist_thresh = 2.0; // Дистанция ассоциации (метры)
+  };
 
   struct SemanticGraph::Impl {
     ISAM2 isam;
@@ -30,59 +37,153 @@ namespace obvi {
     int pose_cnt = 0;
     int next_landmark_id = 0;
 
-    struct TrackedLandmark {
-      int id;
-      int class_id;
-      Point3 pos;
+    // --- Состояния трека ---
+    enum TrackState {
+      CANDIDATE, // Еще не подтвержден (может быть шумом)
+      ACTIVE,    // Подтвержден и находится в поле зрения
+      ARCHIVED   // Был подтвержден, но пропал из виду (остается на карте навсегда)
     };
-    std::vector<TrackedLandmark> landmarks;
+
+    struct Track {
+      TrackState state = CANDIDATE;
+      int class_id;
+      Point3 global_pos;
+
+      int hit_count = 1;
+      int miss_count = 0;
+
+      int graph_id = -1;     // ID в GTSAM (для ACTIVE и ARCHIVED)
+
+      Point3 last_local_measurement;
+      bool has_measurement_this_frame = false;
+    };
+
+    std::list<Track> tracks;
+    TrackerParams tracker_params;
 
     noiseModel::Diagonal::shared_ptr odom_noise;
-    noiseModel::Isotropic::shared_ptr meas_noise;
+    noiseModel::Robust::shared_ptr meas_noise;
 
     Impl() {
       ISAM2Params params;
-      params.relinearizeThreshold = 0.1;
+      params.relinearizeThreshold = 0.01; // Сделал чувствительнее
       params.relinearizeSkip = 1;
       isam = ISAM2(params);
 
-      // Шум одометрии (0.05 rad, 0.1 m)
       odom_noise = noiseModel::Diagonal::Sigmas((Vector(6) << 0.05, 0.05, 0.05, 0.1, 0.1, 0.1).finished());
-      // Шум измерений (0.5 m)
-      meas_noise = noiseModel::Isotropic::Sigma(3, 0.5);
 
-      // logging
+      // Huber loss для защиты от выбросов детекции
+      auto gaussian = noiseModel::Isotropic::Sigma(3, 0.5);
+      meas_noise = noiseModel::Robust::Create(noiseModel::mEstimator::Huber::Create(1.345), gaussian);
+
       spdlog::set_level(spdlog::level::info);
-      spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
     }
 
-    int find_correspondence(const Point3& global_pos, int class_id) {
-      double min_dist = 2.0;
-      int best_id = -1;
+    // --- Логика Трекера ---
+    void update_tracks(const Pose3& current_pose, const std::vector<LandmarkObservation>& observations) {
+      // Сброс флагов
+      for(auto& t : tracks) {
+        t.has_measurement_this_frame = false;
+      }
 
-      spdlog::debug("find_corr: searching for class {} at [{:.2f}, {:.2f}, {:.2f}]",
-                    class_id, global_pos.x(), global_pos.y(), global_pos.z());
-      for (const auto& lm : landmarks) {
-        if (lm.class_id != class_id) continue;
+      // 1. Data Association
+      std::vector<bool> obs_matched(observations.size(), false);
 
-        double d = distance3(lm.pos, global_pos);
-        spdlog::debug(" -> canditate ID {} (Class {}, pos [{:.2f}, {:.2f}, {:.2f}]): Dist {:.2f}m",
-                      lm.id, lm.class_id, lm.pos.x(), lm.pos.y(), lm.pos.z(), d);
-        if (d < min_dist) {
-          min_dist = d;
-          best_id = lm.id;
+      for (size_t i = 0; i < observations.size(); ++i) {
+        Point3 local_pt(observations[i].local_pos.x(), observations[i].local_pos.y(), observations[i].local_pos.z());
+        Point3 global_pt = current_pose.transformFrom(local_pt);
+
+        Track* best_track = nullptr;
+        double min_dist = tracker_params.match_dist_thresh;
+
+        for (auto& track : tracks) {
+          // Мы матчимся только к АКТИВНЫМ или КАНДИДАТАМ.
+          // ARCHIVED треки мы игнорируем (чтобы создавать новые объекты поверх старых, если те пропали)
+          if (track.state == ARCHIVED) continue;
+
+          if (track.class_id != observations[i].class_id) continue;
+          if (track.has_measurement_this_frame) continue;
+
+          double d = distance3(track.global_pos, global_pt);
+          if (d < min_dist) {
+            min_dist = d;
+            best_track = &track;
+          }
+        }
+
+        if (best_track) {
+          obs_matched[i] = true;
+          best_track->has_measurement_this_frame = true;
+          best_track->hit_count++;
+          best_track->miss_count = 0;
+          best_track->last_local_measurement = local_pt;
+
+          // Обновляем global_pos вручную ТОЛЬКО если объект еще не в графе.
+          // Если он уже ACTIVE (в графе), мы доверяем GTSAM и не трогаем позицию тут.
+          if (best_track->state == CANDIDATE) {
+            double alpha = 0.7;
+            best_track->global_pos = alpha * global_pt + (1.0 - alpha) * best_track->global_pos;
+          }
         }
       }
 
-      if (best_id != -1)
-      {
-        spdlog::debug(" => matched ID {}", best_id);
-      }else
-      {
-        spdlog::debug(" => no match found. New object constructing...");
+      // 2. Создание новых треков
+      for (size_t i = 0; i < observations.size(); ++i) {
+        if (!obs_matched[i]) {
+          Point3 local_pt(observations[i].local_pos.x(), observations[i].local_pos.y(), observations[i].local_pos.z());
+
+          Track new_track;
+          new_track.state = CANDIDATE;
+          new_track.class_id = observations[i].class_id;
+          new_track.global_pos = current_pose.transformFrom(local_pt); // Начальная гипотеза
+          new_track.last_local_measurement = local_pt;
+          new_track.has_measurement_this_frame = true;
+
+          tracks.push_back(new_track);
+        }
       }
 
-      return best_id;
+      // 3. Управление жизненным циклом (State Machine)
+      auto it = tracks.begin();
+      while (it != tracks.end()) {
+        if (!it->has_measurement_this_frame) {
+          it->miss_count++;
+        }
+
+        // Логика удаления/архивации
+        if (it->miss_count > tracker_params.max_misses_to_archive) {
+
+          if (it->state == CANDIDATE) {
+            // Если это был шум (не успел стать активным) -> Удаляем навсегда
+            it = tracks.erase(it);
+            continue;
+          }
+          else if (it->state == ACTIVE) {
+            // Если был активным, переводим в АРХИВ.
+            // Он останется в списке tracks, но больше не будет матчиться и обновляться.
+            it->state = ARCHIVED;
+            spdlog::info("Landmark L{} archived (lost tracking)", it->graph_id);
+          }
+        }
+
+        // Логика активации (Candidate -> Active)
+        if (it->state == CANDIDATE && it->hit_count >= tracker_params.min_hits_to_confirm) {
+          it->state = ACTIVE;
+          it->graph_id = next_landmark_id++; // Выдаем ID для GTSAM
+
+          // Добавляем в граф
+          initial_estimates.insert(symbol_shorthand::L(it->graph_id), it->global_pos);
+
+          // Прайор при инициализации (пожестче, 1.0м, чтобы не улетал сразу)
+          graph.add(PriorFactor<Point3>(symbol_shorthand::L(it->graph_id), it->global_pos,
+                                        noiseModel::Isotropic::Sigma(3, 1.0)));
+
+          spdlog::info("Confirmed new Landmark L{} at [{:.2f}, {:.2f}, {:.2f}]",
+                       it->graph_id, it->global_pos.x(), it->global_pos.y(), it->global_pos.z());
+        }
+
+        ++it;
+      }
     }
   };
 
@@ -92,7 +193,7 @@ namespace obvi {
   void SemanticGraph::update(const PoseMatrix& odom_pose_mat, const std::vector<LandmarkObservation>& observations) {
     Pose3 current_pose(odom_pose_mat);
 
-    // --- 1. Поза (Odom / Prior) ---
+    // --- 1. Odometry Update ---
     if (!impl_->initialized) {
       auto prior_noise = noiseModel::Diagonal::Sigmas((Vector(6) << 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4).finished());
       impl_->graph.add(PriorFactor<Pose3>(symbol_shorthand::X(0), current_pose, prior_noise));
@@ -107,56 +208,42 @@ namespace obvi {
       impl_->initial_estimates.insert(symbol_shorthand::X(impl_->pose_cnt), current_pose);
     }
     impl_->prev_pose = current_pose;
-    spdlog::debug("Current pose from odometry: [{:.2f}, {:.2f}, {:.2f}]",
-                  current_pose.x(), current_pose.y(), current_pose.z());
 
-    // --- 2. Объекты (Landmarks) ---
-    int obj_idx = 0;
-    for (const auto& obs : observations) {
-      Point3 local_point(obs.local_pos.x(), obs.local_pos.y(), obs.local_pos.z());
-      spdlog::debug("Local detection pos: [{:.2f}, {:.2f}, {:.2f}]",
-                    local_point.x(), local_point.y(), local_point.z());
+    // --- 2. Tracking Update ---
+    impl_->update_tracks(current_pose, observations);
 
-      Point3 global_point = current_pose.transformFrom(local_point);
+    // --- 3. Add Factors to Graph ---
+    for (auto& track : impl_->tracks) {
+      // Добавляем факторы ТОЛЬКО для АКТИВНЫХ треков, которые видны сейчас
+      if (track.state == Impl::ACTIVE && track.has_measurement_this_frame) {
 
-      int lm_id = impl_->find_correspondence(global_point, obs.class_id);
+        Expression<Pose3> T_wb(symbol_shorthand::X(impl_->pose_cnt));
+        Expression<Point3> P_w(symbol_shorthand::L(track.graph_id));
+        Expression<Point3> P_b_predicted = transformTo(T_wb, P_w);
 
-      if (lm_id == -1) {
-        lm_id = impl_->next_landmark_id++;
-        impl_->landmarks.push_back({lm_id, obs.class_id, global_point});
-        impl_->initial_estimates.insert(symbol_shorthand::L(lm_id), global_point);
-
-        // Слабый прайор для инициализации
-        impl_->graph.add(PriorFactor<Point3>(symbol_shorthand::L(lm_id), global_point,
-                                             noiseModel::Isotropic::Sigma(3, 10.0)));
+        impl_->graph.addExpressionFactor(impl_->meas_noise, track.last_local_measurement, P_b_predicted);
       }
-
-      // Создаем выражения
-      Expression<Pose3> T_wb(symbol_shorthand::X(impl_->pose_cnt));
-      Expression<Point3> P_w(symbol_shorthand::L(lm_id));
-
-      // 1. Используем правильное имя функции (transformTo вместо transform_to)
-      // P_b = T_wb.inverse() * P_w
-      Expression<Point3> P_b_predicted = transformTo(T_wb, P_w);
-
-      // 2. Используем правильный порядок аргументов: (Шум, Измерение, Функция)
-      impl_->graph.addExpressionFactor(impl_->meas_noise, local_point, P_b_predicted);
     }
 
-    // --- 3. Оптимизация ---
+    // --- 4. Optimization ---
     try {
       impl_->isam.update(impl_->graph, impl_->initial_estimates);
       impl_->graph.resize(0);
       impl_->initial_estimates.clear();
 
       Values result = impl_->isam.calculateEstimate();
-      for (auto& lm : impl_->landmarks) {
-        if (result.exists(symbol_shorthand::L(lm.id))) {
-          lm.pos = result.at<Point3>(symbol_shorthand::L(lm.id));
+
+      // Обновляем позиции треков ИЗ РЕЗУЛЬТАТОВ ISAM
+      // Это решает проблему рассинхрона
+      for (auto& track : impl_->tracks) {
+        if ((track.state == Impl::ACTIVE || track.state == Impl::ARCHIVED) &&
+            result.exists(symbol_shorthand::L(track.graph_id))) {
+
+          track.global_pos = result.at<Point3>(symbol_shorthand::L(track.graph_id));
         }
       }
-    } catch (...) {
-    }
+
+    } catch (...) {}
   }
 
   PoseMatrix SemanticGraph::get_optimized_pose() const {
@@ -165,8 +252,12 @@ namespace obvi {
 
   std::vector<MapObject> SemanticGraph::get_map() const {
     std::vector<MapObject> map_out;
-    for (const auto& lm : impl_->landmarks) {
-      map_out.push_back({lm.id, lm.class_id, Eigen::Vector3d(lm.pos.x(), lm.pos.y(), lm.pos.z())});
+    // Выводим И Активные, И Архивные (все, что есть в графе)
+    for (const auto& track : impl_->tracks) {
+      if (track.state == Impl::ACTIVE || track.state == Impl::ARCHIVED) {
+        map_out.push_back({track.graph_id, track.class_id,
+                           Eigen::Vector3d(track.global_pos.x(), track.global_pos.y(), track.global_pos.z())});
+      }
     }
     return map_out;
   }

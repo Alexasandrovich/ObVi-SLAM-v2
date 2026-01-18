@@ -3,14 +3,16 @@ import yaml
 import os
 import cv2
 import time
+import numpy as np
+from common.profiler import ScopedTimer
 
 sys.path.append("/app/build")
 import obvi_cpp
 
 from core.dataset_loader import DatasetLoader
 from core.visualizer import Visualizer
-from perception.detector import ObjectDetector
-from perception.geometry import VisualGeometry
+from core.vis_3d import Visualizer3D
+from perception.pipeline import AgnosticPerception
 
 def load_config(path):
     if not os.path.exists(path):
@@ -37,8 +39,10 @@ def main():
 
     # 3. Perception
     print("Loading AI models...")
-    detector = ObjectDetector(cfg['ai']['model_path'], conf=cfg['ai']['conf_threshold'])
-    geo = VisualGeometry("/app/config/sensors.yaml")
+    perception = AgnosticPerception(
+        sensors_config_path="/app/config/sensors.yaml",
+        algo_config=cfg.get('perception', {})
+    )
 
     # 4. Data Loader
     loader = DatasetLoader(
@@ -47,7 +51,8 @@ def main():
         lidar_topic=cfg['system']['lidar_topic']
     )
 
-    viz = Visualizer(cfg['system'])
+    viz_2d = Visualizer(cfg['system'])
+    viz_3d = Visualizer3D()
     print("System initialized. Processing...")
 
     frame_count = 0
@@ -61,28 +66,30 @@ def main():
             break
 
         # --- PERCEPTION ---
-        detections = detector.detect(frame)
-        obs_classes = []
+        with ScopedTimer("2. Perception Pipeline"):
+            detected_objects, pcd_vis = perception.process(frame) # ONLY camera, NO lidar
+
+        with ScopedTimer("2.1 Convert to Numpy"):
+            depth_cloud = np.asarray(pcd_vis.points) if pcd_vis.has_points() else None
         obs_coords = []
 
-        for det in detections:
-            u, v = det['keypoint']
-            # Расчет 3D координаты
-            pos_3d = geo.pixel_to_3d_ground(u, v)
-
-            if pos_3d is not None:
-                obs_classes.append(det['class_id'])
-                obs_coords.append(pos_3d)
+        for det in detected_objects:
+            obs_coords.append(det.center)
 
         # --- BACKEND ---
         lidar_flat = lidar_data if lidar_data is not None else []
-        system.process(timestamp, lidar_flat, obs_classes, obs_coords)
+        with ScopedTimer("3. Backend (C++)"):
+            system.process(timestamp, lidar_flat, [], obs_coords)
 
         # --- VIZ ---
-        pose = system.get_pose()
-        map_objs = system.get_map()
+        with ScopedTimer("4. Visualization 2D"):
+            pose = system.get_pose()
+            map_objs = system.get_map()
 
-        vis_frame, vis_map = viz.draw(frame, pose, map_objs, detections, lidar_flat, raw_pts=obs_coords)
+            vis_frame, vis_map = viz_2d.draw(frame, pose, map_objs, detected_objects, lidar_flat)
+
+        with ScopedTimer("5. Viz 3D Update"):
+            viz_3d.update(depth_cloud)
 
         cv2.imshow("Camera", cv2.resize(vis_frame, (960, 540)))
         cv2.imshow("Map (Follow)", vis_map)

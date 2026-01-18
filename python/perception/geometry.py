@@ -17,6 +17,8 @@ class Camera:
         with the camera position being y-forward, x-right, z-up
         """
         self.logger = logger
+        self.u_grid = None
+        self.v_grid = None
         if R is None or t is None or f is None or principal_point is None:
             self.R = R
             self.t = t
@@ -43,8 +45,16 @@ class Camera:
             self.sz = sz
             self.mapx, self.mapy = cv2.initUndistortRectifyMap(self.K, self.D, None, self.K,
                                                                tuple(self.sz), cv2.CV_32FC1)
+            if self.sz is not None:
+                self._init_grid(self.sz[0], self.sz[1])
 
         self.camera_axis_remap = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+
+    def _init_grid(self, w, h):
+        """Cache meshgrid for vectorization"""
+        u = np.arange(w, dtype=np.float32)
+        v = np.arange(h, dtype=np.float32)
+        self.u_grid, self.v_grid = np.meshgrid(u, v)
 
     def read_from_yaml_file(self, yaml_path):
         """
@@ -69,6 +79,9 @@ class Camera:
 
             self.mapx, self.mapy = cv2.initUndistortRectifyMap(self.K, self.D, None, self.K, tuple(self.sz),
                                                                cv2.CV_32FC1)
+
+            self._init_grid(width, height)
+
         except Exception as e:
             print(f"An error occurred while parsing the YAML file: {yaml_path} - {str(e)}")
 
@@ -285,8 +298,51 @@ class Camera:
         @param img: image with distortion.
         @return: undistorted image.
         """
+
         return cv2.remap(img, self.mapx, self.mapy, interpolation=cv2.INTER_LINEAR)
 
+    def reproject_depth_map(self, depth_map, stride=4, max_dist=20.0, min_dist=0.1):
+        """
+        stride=4 берет каждый 4-й пиксель.
+        Облако уменьшается в 16 раз (4*4).
+        """
+        # 0. Инициализация сетки (если размер изменился)
+        h, w = depth_map.shape
+        if self.u_grid is None or self.u_grid.shape != (h, w):
+            self._init_grid(w, h)
+
+        # 1. Decimation (Прореживание)
+        # Берем срезы массивов. Это очень быстро в Numpy.
+        z_view = depth_map[::stride, ::stride]
+        u_view = self.u_grid[::stride, ::stride]
+        v_view = self.v_grid[::stride, ::stride]
+
+        # 2. Masking
+        mask = (z_view > min_dist) & (z_view < max_dist)
+        if not np.any(mask):
+            return np.zeros((0, 3), dtype=np.float32)
+
+        z = z_view[mask]
+        u = u_view[mask]
+        v = v_view[mask]
+
+        # 3. Pinhole Project
+        fx, fy = self.K[0, 0], self.K[1, 1]
+        cx, cy = self.K[0, 2], self.K[1, 2]
+
+        x_cam = (u - cx) * z / fx
+        y_cam = (v - cy) * z / fy
+        z_cam = z
+
+        points_cam = np.vstack((x_cam, y_cam, z_cam))
+
+        # 4. Transform to World
+        R_eff = self.get_camera_axis_remap_R()
+        t_vec = self.t.reshape(3, 1)
+
+        points_world = (R_eff.T @ points_cam) + t_vec
+
+        return points_world.T.astype(np.float32)
 
 class VisualGeometry:
     def __init__(self, calib_path):

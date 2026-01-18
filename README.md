@@ -67,3 +67,4 @@
 - GLIM (LiDAR odometry)
 - GTSAM (factor graph optimization)
 - YOLOv8 (semantic segmentation)
+- nvidia container-toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)

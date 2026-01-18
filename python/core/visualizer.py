@@ -26,7 +26,7 @@ class Visualizer:
         self.C_RAW_DET  = (255, 255, 0)   # Голубой (сырая детекция)
         self.C_ROBOT    = (0, 0, 255)     # Красный
 
-    def draw(self, frame, pose, map_objects, detections, lidar_points=None, raw_pts=None):
+    def draw(self, frame, pose, map_objects, detections, lidar_points=None, depth_cam_points=None):
         """Главный метод отрисовки."""
         self.canvas.fill(30) # Очистка фона
 
@@ -38,7 +38,7 @@ class Visualizer:
 
         # 3. Рисуем слои
         self._draw_lidar()
-        self._draw_raw_detections(raw_pts)
+        # self._draw_raw_detections()
         self._draw_trajectory(M_view)
         self._draw_map_objects(map_objects, M_view)
         self._draw_robot()
@@ -187,7 +187,5 @@ class Visualizer:
 
     def _draw_camera_overlay(self, frame, detections):
         vis = frame.copy()
-        for det in detections:
-            x, y, w, h = map(int, det['bbox'])
-            cv2.rectangle(vis, (x - w//2, y - h//2), (x + w//2, y + h//2), (0, 255, 0), 2)
+        # todo: add info
         return vis

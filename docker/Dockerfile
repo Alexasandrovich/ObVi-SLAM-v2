@@ -92,15 +92,23 @@ RUN git clone https://github.com/koide3/glim && \
 RUN ldconfig
 
 # 8. Python Deps
-RUN pip3 install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
 RUN pip3 install --no-cache-dir \
     ultralytics \
+    pandas \
+    timm \
+    open3d \
     opencv-python-headless \
     pybind11 \
     pyyaml \
-    mcap-ros2-support \
-    open3d \
-    numpy
+    mcap-ros2-support
+
+RUN pip3 install --no-cache-dir \
+    "torch==2.2.1" \
+    "torchvision==0.17.1" \
+    --index-url https://download.pytorch.org/whl/cu121 \
+    --extra-index-url https://pypi.org/simple
+
+RUN pip3 install --force-reinstall "numpy<2.0" "scipy>=1.10" "sympy>=1.10"
 
 WORKDIR /app
 COPY docker/entrypoint.sh /entrypoint.sh
